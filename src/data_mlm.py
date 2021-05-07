@@ -254,7 +254,7 @@ def get_train_validation_dataset(working_dir, train_size = 0.8):
 def main():
     dataset_path = "dataset"
     
-    dataset_preparer = MaskedDatasetPreparer("dataset", max_word_frequency=200)
+    dataset_preparer = MaskedDatasetPreparer("dataset")
     dataset_preparer.prepare_dataset()
     
     trainset, validset = get_train_validation_dataset(os.path.join(dataset_path, "masked-lang", "working-dir"))
