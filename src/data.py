@@ -11,7 +11,7 @@ from transformers import RobertaTokenizerFast, DataCollatorForLanguageModeling
 from tokenizers.processors import BertProcessing
 from pathlib import Path
 from sklearn.model_selection import train_test_split
-
+import torch
 
 class OriginalDataset(Dataset):
     def __init__(self, dataset_path, is_train = True, return_ids = False):
@@ -292,7 +292,9 @@ class ClassificationDataset(Dataset):
     def __len__(self):
         return len(self.encodings)
     def __getitem__(self, index):
-        return self.encodings[index], self.labels[index]
+        item = {key: torch.tensor(val[index]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(self.labels[index])
+        return item
     def sanitize_sentence(self, sentence):
         output = []
         for word in re.split("[^A-Za-z]", sentence):
