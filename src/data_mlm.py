@@ -10,6 +10,7 @@ from tokenizers import ByteLevelBPETokenizer
 from transformers import RobertaTokenizerFast, DataCollatorForLanguageModeling
 from tokenizers.processors import BertProcessing
 from pathlib import Path
+from sklearn.model_selection import train_test_split
 
 
 class OriginalDataset(Dataset):
@@ -32,7 +33,7 @@ class OriginalDataset(Dataset):
 
         else:
             return {"id":row["ID"], "text":row["Text"]}, row["Label"]
-class SanitizedDataset(Dataset):
+class SanitizedDatasetMLM(Dataset):
     def __init__(self, dataset_path, is_train, return_ids, split_document, 
                  min_word_frequency = 5, max_word_frequency = -1, 
                  merge_short_sentence = True, min_sentence_length = 10, vocabulary = None):
@@ -75,7 +76,7 @@ class SanitizedDataset(Dataset):
             if self.split_document:
                 texts = self.split_text(text)
             else:
-                texts = [self.santize_sentence(text)]
+                texts = [self.sanitize_sentence(text)]
             self.texts.extend(texts)
             if self.return_ids:
                 self.ids.extend([id_] * len(texts))
@@ -96,7 +97,7 @@ class SanitizedDataset(Dataset):
             self.max_sentence_length = max(self.max_sentence_length, len(words))
             self.texts[i] = " ".join(words)
         
-    def santize_sentence(self, sentence):
+    def sanitize_sentence(self, sentence):
         output = []
         for word in re.split("[^A-Za-z]", sentence):
             word = word.lower()
@@ -109,7 +110,7 @@ class SanitizedDataset(Dataset):
         current_sentence = None
     
         for sent in re.split("[\.?!]", text):
-            sent = self.santize_sentence(sent)
+            sent = self.sanitize_sentence(sent)
             if current_sentence is None:
                 current_sentence = sent 
             elif len(current_sentence.split()) >= self.min_sentence_length:
@@ -158,11 +159,11 @@ class MaskedDatasetPreparer():
         
     def prepare_dataset(self):
         sentences = []
-        trainset = SanitizedDataset(self.train_path, is_train=False, return_ids=False, 
+        trainset = SanitizedDatasetMLM(self.train_path, is_train=False, return_ids=False, 
                                     split_document=self.split_document, min_word_frequency= self.min_word_frequency,
                                     max_word_frequency= self.max_word_frequency, merge_short_sentence= self.merge_short_sentence, 
                                     min_sentence_length= self.min_sentence_length)
-        testset = SanitizedDataset(self.test_path, is_train=False, return_ids=False, 
+        testset = SanitizedDatasetMLM(self.test_path, is_train=False, return_ids=False, 
                                     split_document=self.split_document, min_word_frequency= self.min_word_frequency,
                                     max_word_frequency= self.max_word_frequency, merge_short_sentence= self.merge_short_sentence,
                                     min_sentence_length= self.min_sentence_length,  vocabulary=trainset.vocabulary)
@@ -196,6 +197,7 @@ class MaskedDatasetPreparer():
         tokenizer_save_path = os.path.join(self.working_dir, "tokenizer") 
         tokenizer.save_model(tokenizer_save_path)
         self.vocabulary_size = trainset.vocabulary_size
+    
         
 class MaskedDataset(Dataset):
     def __init__(self, working_dir, tokenizer):
@@ -218,7 +220,7 @@ class MaskedDatasetSplit(Dataset):
         return len(self.indices)
     def __getitem__(self, index):
         return self.dataset[self.indices[index]]
-def get_train_validation_dataset(working_dir, train_size = 0.8):
+def get_mlm_train_validation_dataset(working_dir, train_size = 0.8):
     tokenizer = RobertaTokenizerFast.from_pretrained(os.path.join(working_dir, "tokenizer"), max_len=64)
         
     tokenizer._tokenizer.post_processor = BertProcessing(
@@ -247,17 +249,86 @@ def get_train_validation_dataset(working_dir, train_size = 0.8):
     
     return trainset, validset
 
+def get_classification_train_validation_dataset(dataset_path, tokenizer_path, train_size = 0.8):
+    tokenizer = RobertaTokenizerFast.from_pretrained(tokenizer_path, max_len=64)
+        
+    tokenizer._tokenizer.post_processor = BertProcessing(
+        ("</s>", tokenizer.convert_tokens_to_ids("</s>")),
+        ("<s>", tokenizer.convert_tokens_to_ids("<s>")),
+    )
+
+    tokenizer._tokenizer.post_processor = BertProcessing(
+        ("</s>", tokenizer.convert_tokens_to_ids("</s>")),
+        ("<s>", tokenizer.convert_tokens_to_ids("<s>")),
+    )
+    
+    df = pd.read_csv(os.path.join(dataset_path, "Train.csv"))
+    train_df, valid_df = train_test_split(df, train_size = train_size)
+    trainset = ClassificationDataset(train_df, tokenizer)
+    validset = ClassificationDataset(valid_df, tokenizer)
+    
+    return trainset, validset
+
         
     
+class ClassificationDataset(Dataset):
+    def __init__(self, dataframe, tokenizer, min_sentence_length=10):
+        super().__init__()
+        self.encodings = []
+        self.labels = []
+        self.tokenizer = tokenizer
+        self.min_sentence_length = min_sentence_length
         
+        for index, row in dataframe.iterrows():
+            texts = self.split_text(row["Text"])
+            for txt in texts:
+                encoded = self.tokenizer.encode(txt, padding="max_length", truncation=True)
+                self.encodings.append(encoded)
+                self.labels.append(row["Label"])
+        classes = list(set(self.labels))
+        classes.sort()
+        self.class2index = {classes[i]:i for i in range(len(classes))}
+        self.index2class = {i:classes[i] for i in range(len(classes))}
+    def __len__(self):
+        return len(self.encodings)
+    def __getitem__(self, index):
+        return self.encodings[index], self.labels[index]
+    def sanitize_sentence(self, sentence):
+        output = []
+        for word in re.split("[^A-Za-z]", sentence):
+            word = word.lower()
+            output.append(word)
+        return " ".join(output)
+            
+    def split_text(self, text):        
         
+        output = []
+        current_sentence = None
+    
+        for sent in re.split("[\.?!]", text):
+            sent = self.sanitize_sentence(sent)
+            if current_sentence is None:
+                current_sentence = sent 
+            elif len(current_sentence.split()) >= self.min_sentence_length:
+                output.append(current_sentence)
+                current_sentence = sent 
+            else:
+                current_sentence += " "+ sent
+        if current_sentence is not None:
+            if len(current_sentence.split()) >= self.min_sentence_length:
+                output.append(current_sentence)
+            else:
+                last_sent = output[-1]
+                output[-1] = last_sent +" " + current_sentence
+        return output
+ 
 def main():
     dataset_path = "dataset"
     
     dataset_preparer = MaskedDatasetPreparer("dataset")
     dataset_preparer.prepare_dataset()
     
-    trainset, validset = get_train_validation_dataset(os.path.join(dataset_path, "masked-lang", "working-dir"))
+    trainset, validset = get_mlm_train_validation_dataset(os.path.join(dataset_path, "masked-lang", "working-dir"))
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=trainset.dataset.tokenizer, mlm=True, mlm_probability=0.15
     )

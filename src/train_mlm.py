@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd 
 import torch 
 from transformers import RobertaForMaskedLM,  RobertaConfig, DataCollatorForLanguageModeling, Trainer, TrainingArguments
-from .data_mlm import MaskedDatasetPreparer, get_train_validation_dataset
+from .data_mlm import MaskedDatasetPreparer, get_mlm_train_validation_dataset
 import os
 import random
 
