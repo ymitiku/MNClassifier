@@ -278,22 +278,22 @@ class ClassificationDataset(Dataset):
         self.labels = []
         self.tokenizer = tokenizer
         self.min_sentence_length = min_sentence_length
-        
+        all_texts = []
         for index, row in dataframe.iterrows():
             texts = self.split_text(row["Text"])
             for txt in texts:
-                encoded = self.tokenizer.encode(txt, padding="max_length", truncation=True)
-                self.encodings.append(encoded)
+                all_texts.append(txt)
                 self.labels.append(row["Label"])
+        self.encodings = self.tokenizer(all_texts, truncation=True, padding=True)
         classes = list(set(self.labels))
         classes.sort()
         self.class2index = {classes[i]:i for i in range(len(classes))}
         self.index2class = {i:classes[i] for i in range(len(classes))}
     def __len__(self):
-        return len(self.encodings)
+        return len(self.labels)
     def __getitem__(self, index):
         item = {key: torch.tensor(val[index]) for key, val in self.encodings.items()}
-        item['labels'] = torch.tensor(self.labels[index])
+        item['labels'] = torch.tensor(self.class2index[self.labels[index]])
         return item
     def sanitize_sentence(self, sentence):
         output = []
