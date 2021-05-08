@@ -34,20 +34,10 @@ class OriginalDataset(Dataset):
         else:
             return {"id":row["ID"], "text":row["Text"]}, row["Label"]
 class SanitizedDatasetMLM(Dataset):
-    def __init__(self, dataset_path, is_train, return_ids, split_document, 
-                 min_word_frequency = 5, max_word_frequency = -1, 
-                 merge_short_sentence = True, min_sentence_length = 10):
+    def __init__(self, dataset_path, is_train, return_ids):
         super().__init__()
         self.is_train = is_train
         self.return_ids = return_ids
-        self.split_document = split_document
-        self.min_word_frequency = min_word_frequency
-        self.max_word_frequency = max_word_frequency
-        self.merge_short_sentence = merge_short_sentence
-        self.min_sentence_length = min_sentence_length
-        
-        
-        
         self.build_dataset(dataset_path)
     def build_dataset(self, dataset_path):
         self.word_counts = Counter()
@@ -73,30 +63,20 @@ class SanitizedDatasetMLM(Dataset):
                     text, label = batch
                 else:
                     text = batch
-            if self.split_document:
-                texts = self.split_text(text)
-            else:
-                texts = [self.sanitize_sentence(text)]
+            texts = self.split_text(text)
             self.texts.extend(texts)
             if self.return_ids:
                 self.ids.extend([id_] * len(texts))
             if self.is_train:
                 self.labels.extend([label] * len(texts))
         
-    def sanitize_sentence(self, sentence):
-        output = []
-        for word in re.split("[^A-Za-z]", sentence):
-            word = word.lower()
-            self.word_counts[word]+=1
-            output.append(word)
-        return " ".join(output)
+   
     def split_text(self, text):        
         
         output = []
         current_sentence = None
     
         for sent in re.split("[\.?!]", text):
-            sent = self.sanitize_sentence(sent)
             output.append(sent)
         return output
     def __len__(self):
@@ -115,15 +95,8 @@ class SanitizedDatasetMLM(Dataset):
                 return self.texts[index]
         
 class MaskedDatasetPreparer():
-    def __init__(self, dataset_path, split_document = True, 
-                 min_word_frequency = 5, max_word_frequency = -1, 
-                 merge_short_sentence = True, min_sentence_length = 10, working_folder = None, vocabulary_size = 10_000):
+    def __init__(self, dataset_path,  working_folder = None, vocabulary_size = 10_000, max_length = 32):
         super().__init__()
-        self.split_document = split_document
-        self.min_word_frequency = min_word_frequency
-        self.max_word_frequency = max_word_frequency
-        self.merge_short_sentence = merge_short_sentence
-        self.min_sentence_length = min_sentence_length
         if not os.path.exists(os.path.join(dataset_path, "masked-lang")):
             os.mkdir(os.path.join(dataset_path, "masked-lang"))
         self.working_dir = os.path.join(dataset_path, "masked-lang", "working-dir") if working_folder is None else working_folder
@@ -131,17 +104,12 @@ class MaskedDatasetPreparer():
         self.train_path = os.path.join(dataset_path, "Train.csv")
         self.test_path = os.path.join(dataset_path, "Test.csv")
         self.vocabulary_size = vocabulary_size
+        self.max_length = max_length
         
     def prepare_dataset(self):
         sentences = []
-        trainset = SanitizedDatasetMLM(self.train_path, is_train=False, return_ids=False, 
-                                    split_document=self.split_document, min_word_frequency= self.min_word_frequency,
-                                    max_word_frequency= self.max_word_frequency, merge_short_sentence= self.merge_short_sentence, 
-                                    min_sentence_length= self.min_sentence_length)
-        testset = SanitizedDatasetMLM(self.test_path, is_train=False, return_ids=False, 
-                                    split_document=self.split_document, min_word_frequency= self.min_word_frequency,
-                                    max_word_frequency= self.max_word_frequency, merge_short_sentence= self.merge_short_sentence,
-                                    min_sentence_length= self.min_sentence_length)
+        trainset = SanitizedDatasetMLM(self.train_path, is_train=False, return_ids=False)
+        testset = SanitizedDatasetMLM(self.test_path, is_train=False, return_ids=False)
         
         for i in range(len(trainset)):
             sentences.append(trainset[i])
@@ -159,8 +127,8 @@ class MaskedDatasetPreparer():
         paths = [os.path.join(self.working_dir, "sentences.txt")]
 
         tokenizer = ByteLevelBPETokenizer()
-        tokenizer.enable_padding(pad_token="<pad>", length=64)
-        tokenizer.enable_truncation(max_length=64)
+        tokenizer.enable_padding(pad_token="<pad>", length=self.max_length)
+        tokenizer.enable_truncation(max_length=self.max_length)
         tokenizer.train(files=paths, vocab_size=self.vocabulary_size, min_frequency=5, special_tokens=[
             "<s>",
             "<pad>",
@@ -194,8 +162,8 @@ class MaskedDatasetSplit(Dataset):
         return len(self.indices)
     def __getitem__(self, index):
         return self.dataset[self.indices[index]]
-def get_mlm_train_validation_dataset(working_dir, train_size = 0.8):
-    tokenizer = RobertaTokenizerFast.from_pretrained(os.path.join(working_dir, "tokenizer"), max_len=64)
+def get_mlm_train_validation_dataset(working_dir, train_size = 0.8, max_length = 32):
+    tokenizer = RobertaTokenizerFast.from_pretrained(os.path.join(working_dir, "tokenizer"), max_len=max_length)
         
     tokenizer._tokenizer.post_processor = BertProcessing(
         ("</s>", tokenizer.convert_tokens_to_ids("</s>")),
@@ -223,8 +191,8 @@ def get_mlm_train_validation_dataset(working_dir, train_size = 0.8):
     
     return trainset, validset
 
-def get_classification_train_validation_dataset(dataset_path, tokenizer_path, train_size = 0.8):
-    tokenizer = RobertaTokenizerFast.from_pretrained(tokenizer_path, max_len=64)
+def get_classification_train_validation_dataset(dataset_path, tokenizer_path, fillmask, train_size = 0.8, max_length=32):
+    tokenizer = RobertaTokenizerFast.from_pretrained(tokenizer_path, max_len=max_length)
         
     tokenizer._tokenizer.post_processor = BertProcessing(
         ("</s>", tokenizer.convert_tokens_to_ids("</s>")),
@@ -238,27 +206,29 @@ def get_classification_train_validation_dataset(dataset_path, tokenizer_path, tr
     
     df = pd.read_csv(os.path.join(dataset_path, "Train.csv"))
     train_df, valid_df = train_test_split(df, train_size = train_size)
-    trainset = ClassificationDataset(train_df, tokenizer)
-    validset = ClassificationDataset(valid_df, tokenizer)
+    trainset = ClassificationDataset(fillmask, train_df, tokenizer)
+    validset = ClassificationDataset(fillmask, valid_df, tokenizer)
     
     return trainset, validset
 
         
     
 class ClassificationDataset(Dataset):
-    def __init__(self, dataframe, tokenizer, min_sentence_length=10):
+    def __init__(self, fill_mask, dataframe, tokenizer, max_length = 32):
         super().__init__()
+        self.fill_mask = fill_mask
         self.encodings = []
         self.labels = []
         self.tokenizer = tokenizer
-        self.min_sentence_length = min_sentence_length
+        self.max_length = max_length
         all_texts = []
         for index, row in dataframe.iterrows():
             texts = self.split_text(row["Text"])
             for txt in texts:
                 all_texts.append(txt)
                 self.labels.append(row["Label"])
-        self.encodings = self.tokenizer(all_texts, truncation=True, padding=True)
+        self.texts = all_texts
+        
         classes = list(set(self.labels))
         classes.sort()
         self.class2index = {classes[i]:i for i in range(len(classes))}
@@ -266,36 +236,22 @@ class ClassificationDataset(Dataset):
     def __len__(self):
         return len(self.labels)
     def __getitem__(self, index):
-        item = {key: torch.tensor(val[index]) for key, val in self.encodings.items()}
+        text = self.texts[index]
+        words = text.split()
+        K = np.random.randint(1, len(words)-1)
+        masked_sentence = " ".join(words[:K]  + [self.fill_mask.tokenizer.mask_token] + words[K+1:])
+        text = self.fill_mask(masked_sentence)
+        encodings = self.tokenizer([masked_sentence], truncation=True, padding=True, max_length=self.max_length)
+        item = {key: torch.tensor(val[0]) for key, val in encodings.items()}
         item['labels'] = torch.tensor(self.class2index[self.labels[index]])
         return item
-    def sanitize_sentence(self, sentence):
-        output = []
-        for word in re.split("[^A-Za-z]", sentence):
-            word = word.lower()
-            output.append(word)
-        return " ".join(output)
-            
     def split_text(self, text):        
         
         output = []
         current_sentence = None
     
         for sent in re.split("[\.?!]", text):
-            sent = self.sanitize_sentence(sent)
-            if current_sentence is None:
-                current_sentence = sent 
-            elif len(current_sentence.split()) >= self.min_sentence_length:
-                output.append(current_sentence)
-                current_sentence = sent 
-            else:
-                current_sentence += " "+ sent
-        if current_sentence is not None:
-            if len(current_sentence.split()) >= self.min_sentence_length:
-                output.append(current_sentence)
-            else:
-                last_sent = output[-1]
-                output[-1] = last_sent +" " + current_sentence
+            output.append(sent)
         return output
  
 def main():

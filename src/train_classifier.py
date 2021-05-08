@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd 
 import torch 
 from transformers import RobertaForSequenceClassification, Trainer, TrainingArguments
-from .data_mlm import  get_classification_train_validation_dataset
+from .data import  get_classification_train_validation_dataset
+from transformers import pipeline
 import os
 import random
 
@@ -35,12 +36,13 @@ def main():
     if not os.path.exists(working_dir):
         os.mkdir(working_dir)
  
-    
-    trainset, validset = get_classification_train_validation_dataset(dataset_path, os.path.join(mlm_working_dir, "tokenizer"))
+    fillmask = pipeline('fill-mask', model=os.path.join(mlm_working_dir, "smaller-model"), tokenizer=os.path.join(mlm_working_dir, "tokenizer"))
+
+    trainset, validset = get_classification_train_validation_dataset(dataset_path, os.path.join(mlm_working_dir, "tokenizer"), fillmask=fillmask)
   
      
 
-    model = RobertaForSequenceClassification.from_pretrained(os.path.join(mlm_working_dir, "model"), num_labels=len(trainset.class2index))
+    model = RobertaForSequenceClassification.from_pretrained(os.path.join(mlm_working_dir, "smaller-model"), num_labels=len(trainset.class2index))
     model = model.to(device)
     
 

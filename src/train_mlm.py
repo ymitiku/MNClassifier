@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd 
 import torch 
 from transformers import RobertaForMaskedLM,  RobertaConfig, DataCollatorForLanguageModeling, Trainer, TrainingArguments
-from .data_mlm import MaskedDatasetPreparer, get_mlm_train_validation_dataset
+from .data import MaskedDatasetPreparer, get_mlm_train_validation_dataset
 import os
 import random
 
@@ -32,7 +32,7 @@ def main():
     
     working_dir = os.path.join(dataset_path, "masked-lang", "working-dir")
     
-    dataset_preparer = MaskedDatasetPreparer("dataset", max_word_frequency=200, vocabulary_size = 10_000)
+    dataset_preparer = MaskedDatasetPreparer("dataset", vocabulary_size = 10_000)
     dataset_preparer.prepare_dataset()
     
     trainset, validset = get_mlm_train_validation_dataset(working_dir=working_dir)
@@ -46,8 +46,8 @@ def main():
     config = RobertaConfig(
         vocab_size= vocabulary_size,
         max_position_embeddings=64 + 2,
-        num_attention_heads=12,
-        num_hidden_layers=6,
+        num_attention_heads=6,
+        num_hidden_layers=2,
         type_vocab_size=1,
     )
     model = RobertaForMaskedLM(config=config)
