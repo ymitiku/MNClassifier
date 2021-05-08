@@ -13,6 +13,31 @@ from pathlib import Path
 from sklearn.model_selection import train_test_split
 import torch
 
+
+def split_to_chunks(sent, max_length):
+    sents = re.split("[\.?!]", sent)
+    sent_lengths = []
+    for sent in sents:
+        sent_lengths.append({"sent":sent, "length":len(sent.split())})
+        
+    current = None
+    current_length = None
+    output = []
+    for i in range(len(sent_lengths)):
+        if current is None:
+            current = sent_lengths[i]["sent"]
+            current_length = sent_lengths[i]["length"]
+        elif current_length + sent_lengths[i]["length"] > max_length:
+            output.append(current)
+            current = sent_lengths[i]["sent"]
+            current_length = sent_lengths[i]["length"]
+        else:
+            current += ". " +sent_lengths[i]["sent"]
+            current_length += sent_lengths[i]["length"]
+    if current is not None:
+        output.append(current)
+    return output
+    
 class OriginalDataset(Dataset):
     def __init__(self, dataset_path, is_train = True, return_ids = False):
         super().__init__()
@@ -94,16 +119,8 @@ class MaskedDatasetPreparer():
         self.test_path = os.path.join(dataset_path, "Test.csv")
         self.vocabulary_size = vocabulary_size
         self.max_length = max_length
-    def split_to_chunks(self, sent):
-        words = sent.split()
-        if len(words) <= self.max_length:
-            return [sent]
-        num_splits = int(np.ceil(len(words)/self.max_length))
-        new_max_length  = int(np.ceil(len(words)/num_splits))
-        output = []
-        for i in range(num_splits):
-            output.append(words[new_max_length*i:(i+1) *new_max_length])
-        return output
+    
+        
         
     def prepare_dataset(self):
         sentences = []
@@ -112,11 +129,11 @@ class MaskedDatasetPreparer():
         
         for i in range(len(trainset)):
             sent = trainset[i]
-            sents = self.split_to_chunks(sent)
+            sents = split_to_chunks(sent)
             sentences.extend(sents)
         for i in range(len(testset)):
             sent = testset[i]
-            sents = self.split_to_chunks(sent)
+            sents = split_to_chunks(sent)
             sentences.extend(sents)
         if not os.path.exists(self.working_dir):
             os.mkdir(self.working_dir)
@@ -228,8 +245,10 @@ class ClassificationDataset(Dataset):
         all_texts = []
         for index, row in dataframe.iterrows():
             text = row["Text"]
-            all_texts.append(text)
-            self.labels.append(row["Label"])
+            texts = split_to_chunks(text)
+            for text in texts:
+                all_texts.append(text)
+                self.labels.append(row["Label"])
        
         self.texts = all_texts
         classes = list(set(self.labels))
