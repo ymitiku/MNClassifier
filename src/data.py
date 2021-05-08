@@ -194,12 +194,12 @@ def get_classification_train_validation_dataset(dataset_path, tokenizer_path, fi
     
     df = pd.read_csv(os.path.join(dataset_path, "Train.csv"))
     train_df, valid_df = train_test_split(df, train_size = train_size)
-    trainset = ClassificationDataset(fillmask, train_df, tokenizer)
-    validset = ClassificationDataset(fillmask, valid_df, tokenizer)
+    trainset = ClassificationDataset(train_df, tokenizer, fill_mask=fillmask)
+    validset = ClassificationDataset(valid_df, tokenizer, fill_mask=fillmask)
     
     return trainset, validset
 
-        
+
     
 class ClassificationDataset(Dataset):
     def __init__(self, dataframe, tokenizer, is_train = True, fill_mask = None, augument_size = 5, max_length = 256):
@@ -212,7 +212,10 @@ class ClassificationDataset(Dataset):
         self.augment_size = augument_size
         all_texts = []
         for index, row in dataframe.iterrows():
-            texts = self.split_text(row["Text"])
+            text = row["Text"]
+            all_texts.append(text)
+            self.labels.append(row["Label"])
+                    
             for txt in texts:
                 words = txt.split()
                 if len(words) < 10:
@@ -226,8 +229,8 @@ class ClassificationDataset(Dataset):
                     all_texts.extend(augmented_sequences)
                     self.labels.extend([row["Label"]] * len(augmented_sequences))
                     
-        self.encodings = self.tokenizer(all_texts, truncation=True, padding=True, max_length=self.max_length)
-        
+       
+        self.texts = all_texts
         classes = list(set(self.labels))
         classes.sort()
         self.class2index = {classes[i]:i for i in range(len(classes))}
@@ -236,7 +239,15 @@ class ClassificationDataset(Dataset):
         return len(self.labels)
     def __getitem__(self, index):
         
-        item = {key: torch.tensor(val[index]) for key, val in encodings.items()}
+        txt = self.texts[index]
+        words = txt.split()
+        K = np.random.randint(1, len(words)-1)
+        masked_sentence = " ".join(words[:K]  + [self.fill_mask.mask_token] + words[K+1:])
+        predictions = self.fill_mask(masked_sentence)
+        augmented_sentence = predictions[0]['sequence']
+        encodings = self.tokenizer(augmented_sentence, truncation=True, padding=True, max_length=self.max_length)
+                    
+        item = {key: torch.tensor(val) for key, val in encodings.items()}
         item['labels'] = torch.tensor(self.class2index[self.labels[index]])
         return item
 

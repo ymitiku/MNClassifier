@@ -25,7 +25,7 @@ def main():
     seed_val = 42
     SEQ_LENGTH = 256
     
-    EPOCHS = 10
+    EPOCHS = 1
     vocabulary_size = 10_000
     seed_all(seed_val)
     
