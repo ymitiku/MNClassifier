@@ -44,7 +44,6 @@ class SanitizedDatasetMLM(Dataset):
         
         print("Builing dataset")
         original_dataset = OriginalDataset(dataset_path, self.is_train, self.return_ids)
-        
         self.texts = []
         if self.return_ids:
             self.ids = []
@@ -64,7 +63,7 @@ class SanitizedDatasetMLM(Dataset):
                 else:
                     text = batch
             
-            self.texts.extend(text)
+            self.texts.append(text)
             if self.return_ids:
                 self.ids.append(id_)
             if self.is_train:
@@ -103,9 +102,8 @@ class MaskedDatasetPreparer():
         
         for i in range(len(trainset)):
             sentences.append(trainset[i])
-        
         for i in range(len(testset)):
-            sentences.append(testset[0])
+            sentences.append(testset[i])
         if not os.path.exists(self.working_dir):
             os.mkdir(self.working_dir)
         if not os.path.exists(os.path.join(self.working_dir, "tokenizer")):
@@ -137,7 +135,8 @@ class MaskedDataset(Dataset):
         self.tokenizer = tokenizer
         src_file = Path(os.path.join(self.working_dir, "sentences.txt"))
         lines = src_file.read_text(encoding="utf-8").splitlines()
-        self.inputs = [self.tokenizer.encode(x, padding="max_length", truncation=True ) for x in lines]
+       
+        self.inputs = [self.tokenizer.encode(x, padding="max_length", truncation=True ) for x in tqdm(lines)]
         
         
     def __len__(self):
@@ -165,7 +164,6 @@ def get_mlm_train_validation_dataset(working_dir, train_size = 0.8, max_length =
         ("<s>", tokenizer.convert_tokens_to_ids("<s>")),
     )
     
-    
     all_dataset = MaskedDataset(working_dir, tokenizer)
     
     all_indices = np.arange(len(all_dataset))
@@ -175,7 +173,7 @@ def get_mlm_train_validation_dataset(working_dir, train_size = 0.8, max_length =
     train_size = int(train_size * len(all_indices))
     train_indices = all_indices[:train_size]
     valid_indices = all_indices[train_size:]
-    
+
     trainset = MaskedDatasetSplit(all_dataset, train_indices)
     validset = MaskedDatasetSplit(all_dataset, valid_indices)
     

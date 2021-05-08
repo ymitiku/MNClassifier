@@ -23,6 +23,7 @@ def seed_all(seed_val):
     
 def main():
     seed_val = 42
+    SEQ_LENGTH = 256
     
     EPOCHS = 10
     vocabulary_size = 10_000
@@ -32,10 +33,12 @@ def main():
     
     working_dir = os.path.join(dataset_path, "masked-lang", "working-dir")
     
-    dataset_preparer = MaskedDatasetPreparer("dataset", vocabulary_size = 10_000)
+    dataset_preparer = MaskedDatasetPreparer("dataset", vocabulary_size = 10_000, max_length=SEQ_LENGTH)
+
     dataset_preparer.prepare_dataset()
+  
     
-    trainset, validset = get_mlm_train_validation_dataset(working_dir=working_dir)
+    trainset, validset = get_mlm_train_validation_dataset(working_dir=working_dir, max_length= SEQ_LENGTH)
     
         
     data_collator = DataCollatorForLanguageModeling(
@@ -45,7 +48,7 @@ def main():
 
     config = RobertaConfig(
         vocab_size= vocabulary_size,
-        max_position_embeddings=64 + 2,
+        max_position_embeddings=SEQ_LENGTH + 2,
         num_attention_heads=6,
         num_hidden_layers=2,
         type_vocab_size=1,
@@ -60,7 +63,7 @@ def main():
         output_dir= os.path.join(working_dir, "logs"),
         overwrite_output_dir=True,
         num_train_epochs=EPOCHS,
-        per_device_train_batch_size=128,
+        per_device_train_batch_size=16,
         save_steps=1000,
         save_total_limit=2,
         logging_steps = 500,
