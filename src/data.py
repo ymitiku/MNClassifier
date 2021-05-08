@@ -94,6 +94,16 @@ class MaskedDatasetPreparer():
         self.test_path = os.path.join(dataset_path, "Test.csv")
         self.vocabulary_size = vocabulary_size
         self.max_length = max_length
+    def split_to_chunks(self, sent):
+        words = sent.split()
+        if len(words) <= self.max_length:
+            return [sent]
+        num_splits = int(np.ceil(len(words)/self.max_length))
+        new_max_length  = int(np.ceil(len(words)/num_splits))
+        output = []
+        for i in range(num_splits):
+            output.append(words[new_max_length*i:(i+1) *new_max_length])
+        return output
         
     def prepare_dataset(self):
         sentences = []
@@ -101,13 +111,18 @@ class MaskedDatasetPreparer():
         testset = SanitizedDatasetMLM(self.test_path, is_train=False, return_ids=False)
         
         for i in range(len(trainset)):
-            sentences.append(trainset[i])
+            sent = trainset[i]
+            sents = self.split_to_chunks(sent)
+            sentences.extend(sents)
         for i in range(len(testset)):
-            sentences.append(testset[i])
+            sent = testset[i]
+            sents = self.split_to_chunks(sent)
+            sentences.extend(sents)
         if not os.path.exists(self.working_dir):
             os.mkdir(self.working_dir)
         if not os.path.exists(os.path.join(self.working_dir, "tokenizer")):
             os.mkdir(os.path.join(self.working_dir, "tokenizer"))
+    
         
         with open(os.path.join(self.working_dir, "sentences.txt"), "w") as outfile:
             for sent in sentences:
@@ -215,20 +230,6 @@ class ClassificationDataset(Dataset):
             text = row["Text"]
             all_texts.append(text)
             self.labels.append(row["Label"])
-                    
-            for txt in texts:
-                words = txt.split()
-                if len(words) < 10:
-                    all_texts.append(txt)
-                    self.labels.append(row["Label"])
-                else:
-                    K = np.random.randint(1, len(words)-1)
-                    masked_sentence = " ".join(words[:K]  + [self.fill_mask.mask_token] + words[K+1:])
-                    predictions = self.fill_mask(masked_sentence)
-                    augmented_sequences = [predictions[i]['sequence'] for i in range(augument_size)]
-                    all_texts.extend(augmented_sequences)
-                    self.labels.extend([row["Label"]] * len(augmented_sequences))
-                    
        
         self.texts = all_texts
         classes = list(set(self.labels))
@@ -240,12 +241,14 @@ class ClassificationDataset(Dataset):
     def __getitem__(self, index):
         
         txt = self.texts[index]
+        
         words = txt.split()
-        K = np.random.randint(1, len(words)-1)
-        masked_sentence = " ".join(words[:K]  + [self.fill_mask.mask_token] + words[K+1:])
+        m = min(len(words), self.max_length)
+        K = np.random.randint(1, m-1)
+        masked_sentence = " ".join(words[:K]  + [self.fill_mask.tokenizer.mask_token] + words[K+1:])
         predictions = self.fill_mask(masked_sentence)
         augmented_sentence = predictions[0]['sequence']
-        encodings = self.tokenizer(augmented_sentence, truncation=True, padding=True, max_length=self.max_length)
+        encodings = self.tokenizer(augmented_sentence, truncation=True, padding="max_length", max_length=self.max_length)
                     
         item = {key: torch.tensor(val) for key, val in encodings.items()}
         item['labels'] = torch.tensor(self.class2index[self.labels[index]])
