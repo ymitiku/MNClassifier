@@ -36,7 +36,7 @@ class OriginalDataset(Dataset):
 class SanitizedDatasetMLM(Dataset):
     def __init__(self, dataset_path, is_train, return_ids, split_document, 
                  min_word_frequency = 5, max_word_frequency = -1, 
-                 merge_short_sentence = True, min_sentence_length = 10, vocabulary = None):
+                 merge_short_sentence = True, min_sentence_length = 10):
         super().__init__()
         self.is_train = is_train
         self.return_ids = return_ids
@@ -48,8 +48,8 @@ class SanitizedDatasetMLM(Dataset):
         
         
         
-        self.build_dataset(dataset_path, vocabulary)
-    def build_dataset(self, dataset_path, vocabulary):
+        self.build_dataset(dataset_path)
+    def build_dataset(self, dataset_path):
         self.word_counts = Counter()
         
         print("Builing dataset")
@@ -82,20 +82,6 @@ class SanitizedDatasetMLM(Dataset):
                 self.ids.extend([id_] * len(texts))
             if self.is_train:
                 self.labels.extend([label] * len(texts))
-        if vocabulary is None:
-            self.vocabulary = set()
-            for word, count in self.word_counts.items():
-                if count >= self.min_word_frequency:
-                    if self.max_word_frequency == -1 or count <= self.max_word_frequency:
-                        self.vocabulary.add(word)
-        else:
-            self.vocabulary = vocabulary
-        self.vocabulary_size = len(self.vocabulary)
-        self.max_sentence_length = 0
-        for i in range(len(self.texts)):
-            words = [word for word in self.texts[i].split() if word in self.vocabulary]
-            self.max_sentence_length = max(self.max_sentence_length, len(words))
-            self.texts[i] = " ".join(words)
         
     def sanitize_sentence(self, sentence):
         output = []
@@ -111,19 +97,7 @@ class SanitizedDatasetMLM(Dataset):
     
         for sent in re.split("[\.?!]", text):
             sent = self.sanitize_sentence(sent)
-            if current_sentence is None:
-                current_sentence = sent 
-            elif len(current_sentence.split()) >= self.min_sentence_length:
-                output.append(current_sentence)
-                current_sentence = sent 
-            else:
-                current_sentence += " "+ sent
-        if current_sentence is not None:
-            if len(current_sentence.split()) >= self.min_sentence_length:
-                output.append(current_sentence)
-            else:
-                last_sent = output[-1]
-                output[-1] = last_sent +" " + current_sentence
+            output.append(sent)
         return output
     def __len__(self):
         return len(self.texts)
@@ -143,7 +117,7 @@ class SanitizedDatasetMLM(Dataset):
 class MaskedDatasetPreparer():
     def __init__(self, dataset_path, split_document = True, 
                  min_word_frequency = 5, max_word_frequency = -1, 
-                 merge_short_sentence = True, min_sentence_length = 10, working_folder = None):
+                 merge_short_sentence = True, min_sentence_length = 10, working_folder = None, vocabulary_size = 10_000):
         super().__init__()
         self.split_document = split_document
         self.min_word_frequency = min_word_frequency
@@ -156,6 +130,7 @@ class MaskedDatasetPreparer():
         
         self.train_path = os.path.join(dataset_path, "Train.csv")
         self.test_path = os.path.join(dataset_path, "Test.csv")
+        self.vocabulary_size = vocabulary_size
         
     def prepare_dataset(self):
         sentences = []
@@ -166,7 +141,7 @@ class MaskedDatasetPreparer():
         testset = SanitizedDatasetMLM(self.test_path, is_train=False, return_ids=False, 
                                     split_document=self.split_document, min_word_frequency= self.min_word_frequency,
                                     max_word_frequency= self.max_word_frequency, merge_short_sentence= self.merge_short_sentence,
-                                    min_sentence_length= self.min_sentence_length,  vocabulary=trainset.vocabulary)
+                                    min_sentence_length= self.min_sentence_length)
         
         for i in range(len(trainset)):
             sentences.append(trainset[i])
@@ -186,7 +161,7 @@ class MaskedDatasetPreparer():
         tokenizer = ByteLevelBPETokenizer()
         tokenizer.enable_padding(pad_token="<pad>", length=64)
         tokenizer.enable_truncation(max_length=64)
-        tokenizer.train(files=paths, vocab_size=trainset.vocabulary_size, min_frequency=5, special_tokens=[
+        tokenizer.train(files=paths, vocab_size=self.vocabulary_size, min_frequency=5, special_tokens=[
             "<s>",
             "<pad>",
             "</s>",
@@ -196,7 +171,6 @@ class MaskedDatasetPreparer():
                 
         tokenizer_save_path = os.path.join(self.working_dir, "tokenizer") 
         tokenizer.save_model(tokenizer_save_path)
-        self.vocabulary_size = trainset.vocabulary_size
     
         
 class MaskedDataset(Dataset):
