@@ -129,11 +129,11 @@ class MaskedDatasetPreparer():
         
         for i in range(len(trainset)):
             sent = trainset[i]
-            sents = split_to_chunks(sent)
+            sents = split_to_chunks(sent, self.max_length)
             sentences.extend(sents)
         for i in range(len(testset)):
             sent = testset[i]
-            sents = split_to_chunks(sent)
+            sents = split_to_chunks(sent, self.max_length)
             sentences.extend(sents)
         if not os.path.exists(self.working_dir):
             os.mkdir(self.working_dir)
@@ -245,7 +245,7 @@ class ClassificationDataset(Dataset):
         all_texts = []
         for index, row in dataframe.iterrows():
             text = row["Text"]
-            texts = split_to_chunks(text)
+            texts = split_to_chunks(text, self.max_length)
             for text in texts:
                 all_texts.append(text)
                 self.labels.append(row["Label"])
