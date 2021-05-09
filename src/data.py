@@ -253,10 +253,12 @@ class ClassificationDataset(Dataset):
                     txt = self.tokenizer.decode(encoded["input_ids"])
                     words = txt.split()
                     m = min(len(words), self.max_length)
-                    K = np.random.randint(1, m-1)
-                    masked_sentence = " ".join(words[:K]  + [self.fill_mask.tokenizer.mask_token] + words[K+1:])
-                    predictions = self.fill_mask(masked_sentence, top_k = augument_size)
-                    augmented_sentences = [predictions[i]['sequence'] for i in range(augument_size)]
+                    augmented_sentences = []
+                    for i in range(augument_size):
+                        K = np.random.randint(1, m-1)
+                        masked_sentence = " ".join(words[:K]  + [self.fill_mask.tokenizer.mask_token] + words[K+1:])
+                        predictions = self.fill_mask(masked_sentence, top_k = augument_size)
+                        augmented_sentences.append(predictions[0]['sequence'])
             
                     all_texts.extend(augmented_sentences)
                     self.labels.extend([row["Label"]]*len(augmented_sentences))
