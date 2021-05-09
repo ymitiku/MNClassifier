@@ -38,7 +38,7 @@ def main():
  
     fillmask = pipeline('fill-mask', model=os.path.join(mlm_working_dir, "smaller-model-256"), tokenizer=os.path.join(mlm_working_dir, "tokenizer"))
 
-    trainset, validset = get_classification_train_validation_dataset(dataset_path, os.path.join(mlm_working_dir, "tokenizer"), fillmask=fillmask)
+    trainset, validset = get_classification_train_validation_dataset(dataset_path, os.path.join(mlm_working_dir, "tokenizer"), fillmask=fillmask, augment_size=10)
   
      
 
