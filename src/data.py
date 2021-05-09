@@ -212,7 +212,7 @@ def get_mlm_train_validation_dataset(working_dir, train_size = 0.8, max_length =
     
     return trainset, validset
 
-def get_classification_train_validation_dataset(dataset_path, tokenizer_path, fillmask, train_size = 0.8, max_length=256, augment_size = 5):
+def get_classification_train_validation_dataset(dataset_path, tokenizer_path, fillmask, train_size = 0.8, max_length=256, augument_size = 5):
     tokenizer = RobertaTokenizerFast.from_pretrained(tokenizer_path, max_len=max_length)
         
     tokenizer._tokenizer.post_processor = BertProcessing(
@@ -227,7 +227,7 @@ def get_classification_train_validation_dataset(dataset_path, tokenizer_path, fi
     
     df = pd.read_csv(os.path.join(dataset_path, "Train.csv"))
     train_df, valid_df = train_test_split(df, train_size = train_size)
-    trainset = ClassificationDataset(train_df, tokenizer, fill_mask=fillmask, augument_size=augment_size)
+    trainset = ClassificationDataset(train_df, tokenizer, fill_mask=fillmask, augument_size=augument_size)
     validset = ClassificationDataset(valid_df, tokenizer, fill_mask=fillmask, is_train=False)
     
     return trainset, validset
@@ -242,7 +242,7 @@ class ClassificationDataset(Dataset):
         self.labels = []
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.augment_size = augument_size
+        self.augument_size = augument_size
         all_texts = []
         for index, row in tqdm(dataframe.iterrows(), total=len(dataframe)):
             text = row["Text"]
