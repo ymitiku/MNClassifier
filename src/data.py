@@ -170,6 +170,7 @@ class MaskedDataset(Dataset):
        
         self.inputs = [self.tokenizer.encode(x, padding="max_length", truncation=True ) for x in tqdm(lines)]
         
+        np.random.shuffle(self.inputs)
         
     def __len__(self):
         return len(self.inputs)
@@ -227,7 +228,7 @@ def get_classification_train_validation_dataset(dataset_path, tokenizer_path, fi
     df = pd.read_csv(os.path.join(dataset_path, "Train.csv"))
     train_df, valid_df = train_test_split(df, train_size = train_size)
     trainset = ClassificationDataset(train_df, tokenizer, fill_mask=fillmask)
-    validset = ClassificationDataset(valid_df, tokenizer, fill_mask=fillmask)
+    validset = ClassificationDataset(valid_df, tokenizer, fill_mask=fillmask, is_train=False)
     
     return trainset, validset
 
@@ -243,14 +244,26 @@ class ClassificationDataset(Dataset):
         self.max_length = max_length
         self.augment_size = augument_size
         all_texts = []
-        for index, row in dataframe.iterrows():
+        for index, row in tqdm(dataframe.iterrows(), total=len(dataframe)):
             text = row["Text"]
             texts = split_to_chunks(text, self.max_length)
             for text in texts:
-                all_texts.append(text)
-                self.labels.append(row["Label"])
-       
-        self.texts = all_texts
+                if is_train:
+                    encoded = self.tokenizer(text, truncation=True, padding="max_length", max_length=self.max_length)
+                    txt = self.tokenizer.decode(encoded["input_ids"])
+                    words = txt.split()
+                    m = min(len(words), self.max_length)
+                    K = np.random.randint(1, m-1)
+                    masked_sentence = " ".join(words[:K]  + [self.fill_mask.tokenizer.mask_token] + words[K+1:])
+                    predictions = self.fill_mask(masked_sentence, top_k = augument_size)
+                    augmented_sentences = [predictions[i]['sequence'] for i in range(augument_size)]
+            
+                    all_texts.extend(augmented_sentences)
+                    self.labels.extend([row["Label"]]*len(augmented_sentences))
+                else:
+                    all_texts.append(text)
+                    self.labels.append(row["Label"])
+        self.encodings = self.tokenizer(all_texts, truncation=True, padding="max_length", max_length=self.max_length)
         classes = list(set(self.labels))
         classes.sort()
         self.class2index = {classes[i]:i for i in range(len(classes))}
@@ -259,17 +272,9 @@ class ClassificationDataset(Dataset):
         return len(self.labels)
     def __getitem__(self, index):
         
-        txt = self.texts[index]
-        
-        words = txt.split()
-        m = min(len(words), self.max_length)
-        K = np.random.randint(1, m-1)
-        masked_sentence = " ".join(words[:K]  + [self.fill_mask.tokenizer.mask_token] + words[K+1:])
-        predictions = self.fill_mask(masked_sentence)
-        augmented_sentence = predictions[0]['sequence']
-        encodings = self.tokenizer(augmented_sentence, truncation=True, padding="max_length", max_length=self.max_length)
+
                     
-        item = {key: torch.tensor(val) for key, val in encodings.items()}
+        item = {key: torch.tensor(val[index]) for key, val in self.encodings.items()}
         item['labels'] = torch.tensor(self.class2index[self.labels[index]])
         return item
 

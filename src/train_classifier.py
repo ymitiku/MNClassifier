@@ -36,13 +36,13 @@ def main():
     if not os.path.exists(working_dir):
         os.mkdir(working_dir)
  
-    fillmask = pipeline('fill-mask', model=os.path.join(mlm_working_dir, "smaller-model"), tokenizer=os.path.join(mlm_working_dir, "tokenizer"))
+    fillmask = pipeline('fill-mask', model=os.path.join(mlm_working_dir, "smaller-model-256"), tokenizer=os.path.join(mlm_working_dir, "tokenizer"))
 
     trainset, validset = get_classification_train_validation_dataset(dataset_path, os.path.join(mlm_working_dir, "tokenizer"), fillmask=fillmask)
   
      
 
-    model = RobertaForSequenceClassification.from_pretrained(os.path.join(mlm_working_dir, "smaller-model"), num_labels=len(trainset.class2index))
+    model = RobertaForSequenceClassification.from_pretrained(os.path.join(mlm_working_dir, "smaller-model-256"), num_labels=len(trainset.class2index))
     model = model.to(device)
     
 
